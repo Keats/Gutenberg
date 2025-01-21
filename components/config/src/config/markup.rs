@@ -8,6 +8,7 @@ use libs::syntect::{
 use serde::{Deserialize, Serialize};
 
 use errors::{bail, Result};
+use utils::types::InsertAnchor;
 
 use crate::highlighting::{CLASS_STYLE, THEME_SET};
 
@@ -27,6 +28,8 @@ pub struct ThemeCss {
 pub struct Markdown {
     /// Whether to highlight all code blocks found in markdown files. Defaults to false
     pub highlight_code: bool,
+    /// Emit an error for missing highlight languages. Defaults to false
+    pub error_on_missing_highlight: bool,
     /// Which themes to use for code highlighting. See Readme for supported themes
     /// Defaults to "base16-ocean-dark"
     pub highlight_theme: String,
@@ -34,6 +37,8 @@ pub struct Markdown {
     pub highlight_themes_css: Vec<ThemeCss>,
     /// Whether to render emoji aliases (e.g.: :smile: => 😄) in the markdown files
     pub render_emoji: bool,
+    /// CSS class to add to external links
+    pub external_links_class: Option<String>,
     /// Whether external links are to be opened in a new tab
     /// If this is true, a `rel="noopener"` will always automatically be added for security reasons
     pub external_links_target_blank: bool,
@@ -43,6 +48,8 @@ pub struct Markdown {
     pub external_links_no_referrer: bool,
     /// Whether smart punctuation is enabled (changing quotes, dashes, dots etc in their typographic form)
     pub smart_punctuation: bool,
+    /// Whether parsing of definition lists is enabled
+    pub definition_list: bool,
     /// Whether footnotes are rendered at the bottom in the style of GitHub.
     pub bottom_footnotes: bool,
     /// A list of directories to search for additional `.sublime-syntax` and `.tmTheme` files in.
@@ -55,9 +62,22 @@ pub struct Markdown {
     pub extra_theme_set: Arc<Option<ThemeSet>>,
     /// Add loading="lazy" decoding="async" to img tags. When turned on, the alt text must be plain text. Defaults to false
     pub lazy_async_image: bool,
+    /// Whether to insert a link for each header like the ones you can see in this site if you hover one
+    /// The default template can be overridden by creating a `anchor-link.html` in the `templates` directory
+    pub insert_anchor_links: InsertAnchor,
 }
 
 impl Markdown {
+    pub fn validate_external_links_class(&self) -> Result<()> {
+        // Validate external link class doesn't contain quotes which would break HTML and aren't valid in CSS
+        if let Some(class) = &self.external_links_class {
+            if class.contains('"') || class.contains('\'') {
+                bail!("External link class '{}' cannot contain quotes", class)
+            }
+        }
+        Ok(())
+    }
+
     /// Gets the configured highlight theme from the THEME_SET or the config's extra_theme_set
     /// Returns None if the configured highlighting theme is set to use css
     pub fn get_highlight_theme(&self) -> Option<&Theme> {
@@ -166,12 +186,18 @@ impl Markdown {
         self.external_links_target_blank
             || self.external_links_no_follow
             || self.external_links_no_referrer
+            || self.external_links_class.is_some()
     }
 
     pub fn construct_external_link_tag(&self, url: &str, title: &str) -> String {
         let mut rel_opts = Vec::new();
         let mut target = "".to_owned();
         let title = if title.is_empty() { "".to_owned() } else { format!("title=\"{}\" ", title) };
+
+        let class = self
+            .external_links_class
+            .as_ref()
+            .map_or("".to_owned(), |c| format!("class=\"{}\" ", c));
 
         if self.external_links_target_blank {
             // Security risk otherwise
@@ -190,7 +216,7 @@ impl Markdown {
             format!("rel=\"{}\" ", rel_opts.join(" "))
         };
 
-        format!("<a {}{}{}href=\"{}\">", rel, target, title, url)
+        format!("<a {}{}{}{}href=\"{}\">", class, rel, target, title, url)
     }
 }
 
@@ -198,18 +224,22 @@ impl Default for Markdown {
     fn default() -> Markdown {
         Markdown {
             highlight_code: false,
+            error_on_missing_highlight: false,
             highlight_theme: DEFAULT_HIGHLIGHT_THEME.to_owned(),
             highlight_themes_css: Vec::new(),
             render_emoji: false,
+            external_links_class: None,
             external_links_target_blank: false,
             external_links_no_follow: false,
             external_links_no_referrer: false,
             smart_punctuation: false,
+            definition_list: false,
             bottom_footnotes: false,
             extra_syntaxes_and_themes: vec![],
             extra_syntax_set: None,
             extra_theme_set: Arc::new(None),
             lazy_async_image: false,
+            insert_anchor_links: InsertAnchor::None,
         }
     }
 }
