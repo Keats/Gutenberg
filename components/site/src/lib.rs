@@ -951,6 +951,10 @@ impl Site {
             components.push(taxonomy.lang.as_ref());
         }
 
+        if let Some(prefix) = &taxonomy.kind.prefix {
+            components.push(prefix.as_ref());
+        }
+
         components.push(taxonomy.slug.as_ref());
 
         let list_output =
